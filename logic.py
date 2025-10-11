@@ -9,18 +9,20 @@ import shutil
 from datetime import datetime
 from config import (
     PROJECTS_DIR, ACTIVE_DIR, ARCHIVE_DIR, REGISTRIES_DIR,
-    REGISTRY_ACTUAL, ALLOWED_EXTENSIONS, YEAR_MIN, YEAR_MAX,
-    REGISTRIES_KEEP_COUNT
+    ACTIVE_CATEGORIES, ARCHIVE_CATEGORIES, REGISTRIES_CATEGORIES,
+    REGISTRY_ACTUAL_FILES, ALLOWED_EXTENSIONS, YEAR_MIN, YEAR_MAX,
+    REGISTRIES_KEEP_COUNT, CATEGORIES
 )
 
 
 class Document:
     """Класс для представления документа"""
 
-    def __init__(self, filename, folder_path):
+    def __init__(self, filename, folder_path, category=None):
         self.filename = filename
         self.folder_path = folder_path
         self.full_path = os.path.join(folder_path, filename)
+        self.category = category  # Категория документа
 
         # Парсим имя файла
         parsed = parse_filename(filename)
@@ -32,7 +34,7 @@ class Document:
         self.is_valid = parsed.get("is_valid", False)
 
     def __repr__(self):
-        return f"Document({self.filename})"
+        return f"Document({self.filename}, category={self.category})"
 
 
 def parse_filename(filename):
@@ -152,12 +154,13 @@ def build_filename(typ, kod, version, year, title):
     return f"{typ}.{kod}-{version}-{year} {title}"
 
 
-def scan_folder(folder_path):
+def scan_folder(folder_path, category=None):
     """
     Сканирование папки и парсинг всех документов
 
     Args:
         folder_path: Путь к папке
+        category: Категория документа (опционально)
 
     Returns:
         list[Document]: Список документов
@@ -171,10 +174,30 @@ def scan_folder(folder_path):
         # Проверяем расширение
         ext = os.path.splitext(filename)[1].lower()
         if ext in ALLOWED_EXTENSIONS:
-            doc = Document(filename, folder_path)
+            doc = Document(filename, folder_path, category)
             documents.append(doc)
 
     return documents
+
+
+def scan_folder_with_categories(base_folder, categories_dict):
+    """
+    Сканирование папки с категориями
+
+    Args:
+        base_folder: Базовая папка (ACTIVE_DIR или ARCHIVE_DIR)
+        categories_dict: Словарь категорий (ACTIVE_CATEGORIES или ARCHIVE_CATEGORIES)
+
+    Returns:
+        list[Document]: Список документов из всех категорий
+    """
+    all_documents = []
+
+    for category, folder_path in categories_dict.items():
+        docs = scan_folder(folder_path, category)
+        all_documents.extend(docs)
+
+    return all_documents
 
 
 def find_similar_documents(doc, documents_list):
@@ -240,18 +263,19 @@ def compare_documents(doc1, doc2):
     }
 
 
-def publish_document(source_doc, typ, kod, version, year, title, archive_list):
+def publish_document(source_doc, typ, kod, version, year, title, category, archive_list):
     """
     Публикация документа:
     1. Собрать новое имя
-    2. Скопировать из ПРОЕКТОВ в ДЕЙСТВУЮЩИЕ
+    2. Скопировать из ПРОЕКТОВ в ДЕЙСТВУЮЩИЕ (в выбранную категорию)
     3. Удалить из ПРОЕКТОВ
-    4. Переместить выбранные документы в АРХИВ
-    5. Создать новый реестр
+    4. Переместить выбранные документы в АРХИВ (в соответствующие категории)
+    5. Создать новый реестр для категории
 
     Args:
         source_doc: Document из папки ПРОЕКТЫ
         typ, kod, version, year, title: Новые данные документа
+        category: Категория документа
         archive_list: Список документов для перемещения в архив
 
     Returns:
@@ -263,20 +287,23 @@ def publish_document(source_doc, typ, kod, version, year, title, archive_list):
         ext = os.path.splitext(source_doc.filename)[1]
         new_filename_full = new_filename + ext
 
-        # 2. Копируем в ДЕЙСТВУЮЩИЕ
-        dest_path = os.path.join(ACTIVE_DIR, new_filename_full)
+        # 2. Копируем в ДЕЙСТВУЮЩИЕ (в категорию)
+        category_folder = ACTIVE_CATEGORIES[category]
+        dest_path = os.path.join(category_folder, new_filename_full)
         shutil.copy2(source_doc.full_path, dest_path)
 
         # 3. Удаляем из ПРОЕКТОВ
         os.remove(source_doc.full_path)
 
-        # 4. Перемещаем выбранные в АРХИВ
+        # 4. Перемещаем выбранные в АРХИВ (в соответствующие категории)
         for doc_to_archive in archive_list:
-            archive_path = os.path.join(ARCHIVE_DIR, doc_to_archive.filename)
-            shutil.move(doc_to_archive.full_path, archive_path)
+            if doc_to_archive.category:
+                archive_category_folder = ARCHIVE_CATEGORIES[doc_to_archive.category]
+                archive_path = os.path.join(archive_category_folder, doc_to_archive.filename)
+                shutil.move(doc_to_archive.full_path, archive_path)
 
-        # 5. Создаём новый реестр
-        create_registry()
+        # 5. Создаём новый реестр для категории
+        create_registry_for_category(category)
 
         return True
 
@@ -285,20 +312,28 @@ def publish_document(source_doc, typ, kod, version, year, title, archive_list):
         return False
 
 
-def get_last_registry_number():
+def get_last_registry_number(category):
     """
-    Получить номер последнего реестра
+    Получить номер последнего реестра для категории
+
+    Args:
+        category: Категория документа
 
     Returns:
         int: Номер последнего реестра (0 если реестров нет)
     """
-    if not os.path.exists(REGISTRIES_DIR):
+    registry_folder = REGISTRIES_CATEGORIES[category]
+
+    if not os.path.exists(registry_folder):
         return 0
 
     numbers = []
-    pattern = re.compile(r'^РЕЕСТР_(\d{3})_\d{4}-\d{2}-\d{2}\.txt$')
 
-    for filename in os.listdir(REGISTRIES_DIR):
+    # Формируем паттерн в зависимости от категории
+    category_clean = category.replace(" ", "_")
+    pattern = re.compile(rf'^РЕЕСТР_{category_clean}_(\d{{3}})_\d{{4}}-\d{{2}}-\d{{2}}\.txt$')
+
+    for filename in os.listdir(registry_folder):
         match = pattern.match(filename)
         if match:
             numbers.append(int(match.group(1)))
@@ -306,14 +341,17 @@ def get_last_registry_number():
     return max(numbers) if numbers else 0
 
 
-def create_registry():
+def create_registry_for_category(category):
     """
-    Создать новый реестр действующих документов
+    Создать новый реестр для конкретной категории
 
-    Формат имени: РЕЕСТР_XXX_ГГГГ-ММ-ДД.txt
+    Args:
+        category: Категория документа
+
+    Формат имени: РЕЕСТР_КАТЕГОРИЯ_XXX_ГГГГ-ММ-ДД.txt
     """
     # 1. Номер нового реестра
-    last_number = get_last_registry_number()
+    last_number = get_last_registry_number(category)
     new_number = last_number + 1
 
     # 2. Текущая дата
@@ -321,11 +359,15 @@ def create_registry():
     time_now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
     # 3. Имя файла
-    filename = f"РЕЕСТР_{new_number:03d}_{today}.txt"
-    filepath = os.path.join(REGISTRIES_DIR, filename)
+    category_clean = category.replace(" ", "_")
+    filename = f"РЕЕСТР_{category_clean}_{new_number:03d}_{today}.txt"
 
-    # 4. Сканируем действующие документы
-    active_docs = scan_folder(ACTIVE_DIR)
+    registry_folder = REGISTRIES_CATEGORIES[category]
+    filepath = os.path.join(registry_folder, filename)
+
+    # 4. Сканируем действующие документы категории
+    category_folder = ACTIVE_CATEGORIES[category]
+    active_docs = scan_folder(category_folder, category)
 
     # Сортируем по имени файла
     active_docs.sort(key=lambda d: d.filename)
@@ -333,7 +375,8 @@ def create_registry():
     # 5. Формируем содержимое реестра
     content = []
     content.append("═" * 80)
-    content.append("РЕЕСТР ДЕЙСТВУЮЩИХ ДОКУМЕНТОВ СМК")
+    content.append(f"РЕЕСТР ДЕЙСТВУЮЩИХ ДОКУМЕНТОВ СМК")
+    content.append(f"Категория: {category}")
     content.append(f"Версия: {new_number}")
     content.append(f"Дата создания: {time_now}")
     content.append("═" * 80)
@@ -359,29 +402,36 @@ def create_registry():
         f.write('\n'.join(content))
 
     # 7. Копируем в АКТУАЛЬНЫЙ
-    shutil.copy2(filepath, REGISTRY_ACTUAL)
+    actual_registry_path = REGISTRY_ACTUAL_FILES[category]
+    shutil.copy2(filepath, actual_registry_path)
 
     # 8. Очищаем старые реестры
-    cleanup_old_registries()
+    cleanup_old_registries_for_category(category)
 
     print(f"Создан реестр: {filename}")
 
 
-def cleanup_old_registries():
+def cleanup_old_registries_for_category(category):
     """
-    Удалить старые реестры, оставить только последние REGISTRIES_KEEP_COUNT
+    Удалить старые реестры категории, оставить только последние REGISTRIES_KEEP_COUNT
+
+    Args:
+        category: Категория документа
     """
-    if not os.path.exists(REGISTRIES_DIR):
+    registry_folder = REGISTRIES_CATEGORIES[category]
+
+    if not os.path.exists(registry_folder):
         return
 
-    # Получаем все файлы реестров
-    pattern = re.compile(r'^РЕЕСТР_(\d{3})_\d{4}-\d{2}-\d{2}\.txt$')
+    # Получаем все файлы реестров категории
+    category_clean = category.replace(" ", "_")
+    pattern = re.compile(rf'^РЕЕСТР_{category_clean}_(\d{{3}})_\d{{4}}-\d{{2}}-\d{{2}}\.txt$')
     registries = []
 
-    for filename in os.listdir(REGISTRIES_DIR):
+    for filename in os.listdir(registry_folder):
         match = pattern.match(filename)
         if match:
-            filepath = os.path.join(REGISTRIES_DIR, filename)
+            filepath = os.path.join(registry_folder, filename)
             registries.append((int(match.group(1)), filepath))
 
     # Сортируем по номеру

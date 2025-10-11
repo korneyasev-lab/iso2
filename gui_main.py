@@ -6,9 +6,9 @@ GUI для ISO2
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
-from config import PROJECTS_DIR, ACTIVE_DIR, ARCHIVE_DIR, DOCUMENT_TYPES
+from config import PROJECTS_DIR, ACTIVE_DIR, ARCHIVE_DIR, CATEGORIES, ACTIVE_CATEGORIES, ARCHIVE_CATEGORIES
 from logic import (
-    scan_folder, find_similar_documents, compare_documents,
+    scan_folder, scan_folder_with_categories, find_similar_documents, compare_documents,
     publish_document, parse_filename, build_filename
 )
 
@@ -25,73 +25,44 @@ class MainWindow:
         # Текущие документы
         self.current_folder = PROJECTS_DIR
         self.documents = []
+        self.current_category = None  # Текущая выбранная категория (для фильтра)
+
+        # Настройка стилей
+        self.setup_styles()
 
         self.create_widgets()
         self.load_documents()
 
-    def create_widgets(self):
-        """Создание элементов интерфейса"""
-
-        # Верхняя панель с кнопками
-        top_frame = tk.Frame(self.root, bg="#37474F")
-        top_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
-
-        # Кнопки выбора папки (тёмно-серые)
-        tk.Button(
-            top_frame, text="ПРОЕКТЫ", width=15,
-            command=lambda: self.switch_folder(PROJECTS_DIR),
-            font=("Arial", 14, "bold"), bg="#4A5568", fg="white",
-            activebackground="#5A6678", activeforeground="white",
-            relief=tk.RAISED, bd=2
-        ).pack(side=tk.LEFT, padx=5)
-
-        tk.Button(
-            top_frame, text="ДЕЙСТВУЮЩИЕ", width=15,
-            command=lambda: self.switch_folder(ACTIVE_DIR),
-            font=("Arial", 14, "bold"), bg="#4A5568", fg="white",
-            activebackground="#5A6678", activeforeground="white",
-            relief=tk.RAISED, bd=2
-        ).pack(side=tk.LEFT, padx=5)
-
-        tk.Button(
-            top_frame, text="АРХИВ", width=15,
-            command=lambda: self.switch_folder(ARCHIVE_DIR),
-            font=("Arial", 14, "bold"), bg="#4A5568", fg="white",
-            activebackground="#5A6678", activeforeground="white",
-            relief=tk.RAISED, bd=2
-        ).pack(side=tk.LEFT, padx=5)
-
-        # Разделитель
-        tk.Frame(top_frame, width=30, bg="#37474F").pack(side=tk.LEFT)
-
-        # Кнопка публикации (чуть светлее для выделения)
-        self.publish_btn = tk.Button(
-            top_frame, text="📤 Опубликовать", width=20,
-            command=self.open_publish_dialog,
-            bg="#546E7A", fg="white", font=("Arial", 14, "bold"),
-            activebackground="#607D8B", activeforeground="white",
-            relief=tk.RAISED, bd=2
-        )
-        self.publish_btn.pack(side=tk.LEFT, padx=5)
-
-        # Метка текущей папки
-        self.folder_label = tk.Label(
-            self.root, text="", font=("Arial", 16, "bold"),
-            bg="#455A64", fg="white", anchor="w", padx=10, height=2
-        )
-        self.folder_label.pack(fill=tk.X, padx=10)
-
-        # Таблица документов
-        table_frame = tk.Frame(self.root, bg="#2C3E50")
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Scrollbar
-        scrollbar = tk.Scrollbar(table_frame, bg="#37474F")
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Настройка стиля для Treeview
+    def setup_styles(self):
+        """Настройка стилей ttk"""
         style = ttk.Style()
         style.theme_use('default')
+
+        # Стиль для кнопок
+        style.configure("TButton",
+                        font=("Arial", 14, "bold"),
+                        foreground="white",
+                        background="#4A5568",
+                        borderwidth=2,
+                        relief=tk.RAISED,
+                        padding=5)
+        style.map("TButton",
+                  background=[('active', '#5A6678'), ('pressed', '#3A4558')],
+                  foreground=[('active', 'white')])
+
+        # Стиль для кнопки публикации (чуть светлее)
+        style.configure("Publish.TButton",
+                        font=("Arial", 14, "bold"),
+                        foreground="white",
+                        background="#546E7A",
+                        borderwidth=2,
+                        relief=tk.RAISED,
+                        padding=5)
+        style.map("Publish.TButton",
+                  background=[('active', '#607D8B'), ('pressed', '#446E7A')],
+                  foreground=[('active', 'white')])
+
+        # Стиль для Treeview
         style.configure("Treeview",
                         background="#37474F",
                         foreground="white",
@@ -106,6 +77,91 @@ class MainWindow:
         style.map("Treeview",
                   background=[('selected', '#546E7A')],
                   foreground=[('selected', 'white')])
+
+        # Стиль для Combobox
+        style.configure("TCombobox",
+                        font=("Arial", 14),
+                        foreground="black",
+                        background="white",
+                        fieldbackground="white",
+                        selectbackground="#546E7A",
+                        selectforeground="white")
+
+    def create_widgets(self):
+        """Создание элементов интерфейса"""
+
+        # Верхняя панель с кнопками
+        top_frame = tk.Frame(self.root, bg="#37474F")
+        top_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
+
+        # Кнопки выбора папки
+        ttk.Button(
+            top_frame, text="ПРОЕКТЫ", width=15,
+            command=lambda: self.switch_folder(PROJECTS_DIR),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            top_frame, text="ДЕЙСТВУЮЩИЕ", width=15,
+            command=lambda: self.switch_folder(ACTIVE_DIR),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            top_frame, text="АРХИВ", width=15,
+            command=lambda: self.switch_folder(ARCHIVE_DIR),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Разделитель
+        tk.Frame(top_frame, width=30, bg="#37474F").pack(side=tk.LEFT)
+
+        # Кнопка публикации
+        self.publish_btn = ttk.Button(
+            top_frame, text="📤 Опубликовать", width=20,
+            command=self.open_publish_dialog,
+            style="Publish.TButton"
+        )
+        self.publish_btn.pack(side=tk.LEFT, padx=5)
+
+        # Метка текущей папки и фильтр категорий
+        folder_filter_frame = tk.Frame(self.root, bg="#455A64", height=60)
+        folder_filter_frame.pack(fill=tk.X, padx=10)
+        folder_filter_frame.pack_propagate(False)
+
+        # Левая часть - название папки
+        self.folder_label = tk.Label(
+            folder_filter_frame, text="", font=("Arial", 16, "bold"),
+            bg="#455A64", fg="white", anchor="w", padx=10
+        )
+        self.folder_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Правая часть - фильтр по категориям
+        filter_frame = tk.Frame(folder_filter_frame, bg="#455A64")
+        filter_frame.pack(side=tk.RIGHT, padx=10)
+
+        self.category_label = tk.Label(
+            filter_frame, text="Категория:", font=("Arial", 14, "bold"),
+            bg="#455A64", fg="white"
+        )
+
+        self.category_combo = ttk.Combobox(
+            filter_frame,
+            values=["Все категории"] + CATEGORIES,
+            state="readonly",
+            font=("Arial", 14),
+            width=20
+        )
+        self.category_combo.current(0)
+        self.category_combo.bind("<<ComboboxSelected>>", self.on_category_change)
+
+        # Таблица документов
+        table_frame = tk.Frame(self.root, bg="#2C3E50")
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Scrollbar
+        scrollbar = tk.Scrollbar(table_frame, bg="#37474F")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Treeview - ОДНА колонка "Название документа"
         columns = ("Название документа",)
@@ -135,6 +191,17 @@ class MainWindow:
     def switch_folder(self, folder_path):
         """Переключение между папками"""
         self.current_folder = folder_path
+        self.current_category = None
+        self.category_combo.current(0)  # Сбрасываем фильтр на "Все категории"
+
+        # Показываем/скрываем фильтр категорий
+        if folder_path in [ACTIVE_DIR, ARCHIVE_DIR]:
+            self.category_label.pack(side=tk.LEFT, padx=5)
+            self.category_combo.pack(side=tk.LEFT, padx=5)
+        else:
+            self.category_label.pack_forget()
+            self.category_combo.pack_forget()
+
         self.load_documents()
 
         # Активируем кнопку публикации только для ПРОЕКТОВ
@@ -143,9 +210,30 @@ class MainWindow:
         else:
             self.publish_btn.config(state=tk.DISABLED)
 
+    def on_category_change(self, event=None):
+        """Обработка изменения фильтра категорий"""
+        selected = self.category_combo.get()
+
+        if selected == "Все категории":
+            self.current_category = None
+        else:
+            self.current_category = selected
+
+        self.filter_documents()
+
     def load_documents(self):
         """Загрузка документов из текущей папки"""
-        self.documents = scan_folder(self.current_folder)
+        if self.current_folder == PROJECTS_DIR:
+            # В ПРОЕКТАХ - обычное сканирование без категорий
+            self.documents = scan_folder(self.current_folder)
+        elif self.current_folder == ACTIVE_DIR:
+            # В ДЕЙСТВУЮЩИХ - сканирование с категориями
+            self.documents = scan_folder_with_categories(ACTIVE_DIR, ACTIVE_CATEGORIES)
+        elif self.current_folder == ARCHIVE_DIR:
+            # В АРХИВЕ - сканирование с категориями
+            self.documents = scan_folder_with_categories(ARCHIVE_DIR, ARCHIVE_CATEGORIES)
+        else:
+            self.documents = []
 
         # Обновляем метку папки
         folder_name = os.path.basename(self.current_folder)
@@ -155,28 +243,38 @@ class MainWindow:
         self.filter_documents()
 
     def filter_documents(self):
-        """Отображение документов"""
+        """Отображение документов с учетом фильтра категорий"""
         # Очищаем таблицу
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        # Фильтруем документы по категории
+        if self.current_category:
+            filtered_docs = [doc for doc in self.documents if doc.category == self.current_category]
+        else:
+            filtered_docs = self.documents
+
         # Добавляем документы в таблицу
-        for doc in self.documents:
+        for doc in filtered_docs:
             # Определяем что показывать
             if self.current_folder == PROJECTS_DIR:
                 # В ПРОЕКТАХ - имя файла КАК ЕСТЬ
                 display_name = doc.filename
             else:
-                # В ДЕЙСТВУЮЩИХ/АРХИВ - собранное имя (парсинг + слияние)
+                # В ДЕЙСТВУЮЩИХ/АРХИВ - собранное имя (парсинг + слияние) + категория
                 if doc.is_valid:
                     display_name = build_filename(doc.typ, doc.kod, doc.version, doc.year, doc.title)
+                    if doc.category:
+                        display_name = f"[{doc.category}] {display_name}"
                 else:
                     display_name = doc.filename
+                    if doc.category:
+                        display_name = f"[{doc.category}] {display_name}"
 
-            self.tree.insert("", tk.END, values=(display_name,), tags=(doc.filename,))
+            self.tree.insert("", tk.END, values=(display_name,), tags=(doc.filename, doc.category if doc.category else ""))
 
         # Обновляем статус
-        self.status_label.config(text=f"Показано документов: {len(self.documents)}")
+        self.status_label.config(text=f"Показано документов: {len(filtered_docs)}")
 
     def open_document(self, event):
         """Открыть документ (двойной клик)"""
@@ -184,15 +282,16 @@ class MainWindow:
         if not selection:
             return
 
-        # Получаем filename из tags
+        # Получаем filename и category из tags
         tags = self.tree.item(selection[0])['tags']
         if not tags:
             return
 
         filename = tags[0]
+        category = tags[1] if len(tags) > 1 and tags[1] else None
 
         # Находим документ
-        doc = next((d for d in self.documents if d.filename == filename), None)
+        doc = next((d for d in self.documents if d.filename == filename and d.category == category), None)
         if doc:
             os.startfile(doc.full_path)
 
@@ -227,7 +326,7 @@ class PublishDialog:
         # Создаём диалоговое окно
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Публикация документа")
-        self.dialog.geometry("900x700")
+        self.dialog.geometry("900x650")
         self.dialog.configure(bg="#2C3E50")
         self.dialog.transient(parent)
         self.dialog.grab_set()
@@ -313,6 +412,23 @@ class PublishDialog:
                  font=("Arial", 14), bg="#4A5568", fg="white",
                  insertbackground="white").pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+        # Категория
+        row6 = tk.Frame(frame2, bg="#37474F")
+        row6.pack(fill=tk.X, pady=2)
+        tk.Label(row6, text="Категория:", width=10, anchor="w",
+                 font=("Arial", 14), bg="#37474F", fg="white").pack(side=tk.LEFT)
+
+        self.category_var = tk.StringVar(value=CATEGORIES[0])
+        category_combo = ttk.Combobox(
+            row6,
+            textvariable=self.category_var,
+            values=CATEGORIES,
+            state="readonly",
+            font=("Arial", 14),
+            width=25
+        )
+        category_combo.pack(side=tk.LEFT)
+
         # Обновление предпросмотра при изменении полей
         for var in [self.typ_var, self.kod_var, self.version_var, self.year_var, self.title_var]:
             var.trace('w', lambda *args: self.update_preview())
@@ -321,9 +437,10 @@ class PublishDialog:
         self.similar_frame = tk.LabelFrame(
             self.dialog, text="Похожие документы в ДЕЙСТВУЮЩИХ",
             padx=10, pady=10, font=("Arial", 14, "bold"),
-            bg="#37474F", fg="white"
+            bg="#37474F", fg="white", height=200
         )
-        self.similar_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.similar_frame.pack(fill=tk.BOTH, padx=10, pady=5)
+        self.similar_frame.pack_propagate(False)  # Фиксируем высоту
 
         # Scrollable frame для похожих документов
         canvas = tk.Canvas(self.similar_frame, bg="#37474F", highlightthickness=0)
@@ -357,18 +474,16 @@ class PublishDialog:
         button_frame = tk.Frame(self.dialog, bg="#2C3E50")
         button_frame.pack(pady=10)
 
-        tk.Button(
+        ttk.Button(
             button_frame, text="Отмена", width=15,
             command=self.dialog.destroy,
-            font=("Arial", 14), bg="#546E7A", fg="white",
-            activebackground="#607D8B", activeforeground="white"
+            style="TButton"
         ).pack(side=tk.LEFT, padx=5)
 
-        tk.Button(
+        ttk.Button(
             button_frame, text="Опубликовать", width=15,
-            command=self.publish, bg="#5A6C7A", fg="white",
-            font=("Arial", 14, "bold"),
-            activebackground="#6A7C8A", activeforeground="white"
+            command=self.publish,
+            style="Publish.TButton"
         ).pack(side=tk.LEFT, padx=5)
 
         # Обновляем предпросмотр
@@ -376,8 +491,8 @@ class PublishDialog:
 
     def find_similar(self):
         """Поиск и отображение похожих документов"""
-        # Загружаем действующие документы
-        active_docs = scan_folder(ACTIVE_DIR)
+        # Загружаем действующие документы из всех категорий
+        active_docs = scan_folder_with_categories(ACTIVE_DIR, ACTIVE_CATEGORIES)
 
         # Ищем похожие
         self.similar_docs = find_similar_documents(self.document, active_docs)
@@ -414,11 +529,14 @@ class PublishDialog:
             info_frame = tk.Frame(frame, bg="#4A5568")
             info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-            # Собранное имя документа
+            # Собранное имя документа с категорией
             if doc.is_valid:
                 doc_display = build_filename(doc.typ, doc.kod, doc.version, doc.year, doc.title)
             else:
                 doc_display = doc.filename
+
+            if doc.category:
+                doc_display = f"[{doc.category}] {doc_display}"
 
             tk.Label(
                 info_frame, text=doc_display,
@@ -465,10 +583,11 @@ class PublishDialog:
         version = self.version_var.get().strip()
         year = self.year_var.get().strip()
         title = self.title_var.get().strip()
+        category = self.category_var.get()
 
         # Проверка заполненности
-        if not all([typ, kod, version, year, title]):
-            messagebox.showerror("Ошибка", "Заполните все поля")
+        if not all([typ, kod, version, year, title, category]):
+            messagebox.showerror("Ошибка", "Заполните все поля, включая категорию")
             return
 
         # Список документов для архивации
@@ -476,7 +595,8 @@ class PublishDialog:
 
         # Подтверждение
         msg = f"Опубликовать документ?\n\n"
-        msg += f"Новое имя: {build_filename(typ, kod, version, year, title)}\n\n"
+        msg += f"Новое имя: {build_filename(typ, kod, version, year, title)}\n"
+        msg += f"Категория: {category}\n\n"
         if archive_list:
             msg += f"В архив будет перемещено документов: {len(archive_list)}"
 
@@ -485,7 +605,7 @@ class PublishDialog:
 
         # Публикация
         success = publish_document(
-            self.document, typ, kod, version, year, title, archive_list
+            self.document, typ, kod, version, year, title, category, archive_list
         )
 
         if success:
