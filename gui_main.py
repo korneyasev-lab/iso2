@@ -6,10 +6,15 @@ GUI для ISO2
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
+from datetime import datetime
 from config import PROJECTS_DIR, ACTIVE_DIR, ARCHIVE_DIR, CATEGORIES, ACTIVE_CATEGORIES, ARCHIVE_CATEGORIES
 from logic import (
     scan_folder, scan_folder_with_categories, find_similar_documents, compare_documents,
     publish_document, parse_filename, build_filename
+)
+from registry import (
+    read_registry_content, export_registry_to_csv, export_registry_to_excel,
+    export_all_registries_to_excel, manual_update_registry
 )
 
 
@@ -110,6 +115,13 @@ class MainWindow:
         ttk.Button(
             top_frame, text="АРХИВ", width=15,
             command=lambda: self.switch_folder(ARCHIVE_DIR),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Кнопка реестров
+        ttk.Button(
+            top_frame, text="РЕЕСТРЫ", width=15,
+            command=self.open_registry_window,
             style="TButton"
         ).pack(side=tk.LEFT, padx=5)
 
@@ -314,6 +326,11 @@ class MainWindow:
         if doc:
             dialog = PublishDialog(self.root, doc, self)
             self.root.wait_window(dialog.dialog)
+
+    def open_registry_window(self):
+        """Открыть окно просмотра реестров"""
+        registry_window = RegistryWindow(self.root)
+        self.root.wait_window(registry_window.window)
 
 
 class PublishDialog:
@@ -614,3 +631,219 @@ class PublishDialog:
             self.dialog.destroy()
         else:
             messagebox.showerror("Ошибка", "Не удалось опубликовать документ")
+
+
+class RegistryWindow:
+    """Окно просмотра и экспорта реестров"""
+
+    def __init__(self, parent):
+        # Создаём окно
+        self.window = tk.Toplevel(parent)
+        self.window.title("Реестры документации СМК")
+        self.window.geometry("1000x700")
+        self.window.configure(bg="#2C3E50")
+        self.window.transient(parent)
+        self.window.grab_set()
+
+        self.current_category = CATEGORIES[0]  # Текущая выбранная категория
+
+        self.create_widgets()
+        self.load_registry()
+
+    def create_widgets(self):
+        """Создание элементов интерфейса"""
+
+        # Заголовок
+        header = tk.Label(
+            self.window, text="📋 Реестры действующих документов",
+            font=("Arial", 18, "bold"), bg="#37474F", fg="white", pady=15
+        )
+        header.pack(fill=tk.X)
+
+        # Панель выбора категории и кнопок
+        control_frame = tk.Frame(self.window, bg="#455A64", pady=10)
+        control_frame.pack(fill=tk.X, padx=10)
+
+        # Выбор категории
+        tk.Label(
+            control_frame, text="Категория:", font=("Arial", 14, "bold"),
+            bg="#455A64", fg="white"
+        ).pack(side=tk.LEFT, padx=10)
+
+        self.category_var = tk.StringVar(value=self.current_category)
+        self.category_combo = ttk.Combobox(
+            control_frame,
+            textvariable=self.category_var,
+            values=CATEGORIES,
+            state="readonly",
+            font=("Arial", 14),
+            width=25
+        )
+        self.category_combo.pack(side=tk.LEFT, padx=5)
+        self.category_combo.bind("<<ComboboxSelected>>", self.on_category_change)
+
+        # Разделитель
+        tk.Frame(control_frame, width=30, bg="#455A64").pack(side=tk.LEFT)
+
+        # Кнопка обновления реестра
+        ttk.Button(
+            control_frame, text="🔄 Обновить реестр", width=20,
+            command=self.update_registry,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Панель кнопок экспорта
+        export_frame = tk.Frame(self.window, bg="#455A64", pady=10)
+        export_frame.pack(fill=tk.X, padx=10)
+
+        tk.Label(
+            export_frame, text="Экспорт:", font=("Arial", 14, "bold"),
+            bg="#455A64", fg="white"
+        ).pack(side=tk.LEFT, padx=10)
+
+        ttk.Button(
+            export_frame, text="💾 CSV (текущая категория)", width=25,
+            command=self.export_csv,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            export_frame, text="📊 Excel (текущая категория)", width=28,
+            command=self.export_excel_single,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            export_frame, text="📚 Excel (все категории)", width=25,
+            command=self.export_excel_all,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Текстовое поле для отображения реестра
+        text_frame = tk.Frame(self.window, bg="#2C3E50")
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Scrollbar
+        scrollbar = tk.Scrollbar(text_frame, bg="#37474F")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Text widget
+        self.text_widget = tk.Text(
+            text_frame,
+            font=("Courier New", 12),
+            bg="#37474F",
+            fg="white",
+            insertbackground="white",
+            wrap=tk.WORD,
+            yscrollcommand=scrollbar.set
+        )
+        self.text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.text_widget.yview)
+
+        # Статус бар
+        self.status_label = tk.Label(
+            self.window, text="Готов", anchor="w",
+            bg="#37474F", fg="white", relief=tk.SUNKEN,
+            font=("Arial", 12), height=2
+        )
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Кнопка закрытия
+        close_frame = tk.Frame(self.window, bg="#2C3E50")
+        close_frame.pack(pady=10)
+
+        ttk.Button(
+            close_frame, text="Закрыть", width=15,
+            command=self.window.destroy,
+            style="TButton"
+        ).pack()
+
+    def on_category_change(self, event=None):
+        """Обработка изменения категории"""
+        self.current_category = self.category_var.get()
+        self.load_registry()
+
+    def load_registry(self):
+        """Загрузить и отобразить реестр для текущей категории"""
+        self.text_widget.delete(1.0, tk.END)
+
+        content = read_registry_content(self.current_category)
+        self.text_widget.insert(1.0, content)
+
+        self.status_label.config(text=f"Загружен реестр: {self.current_category}")
+
+    def update_registry(self):
+        """Принудительное обновление реестра"""
+        success = manual_update_registry(self.current_category)
+
+        if success:
+            messagebox.showinfo("Успех", f"Реестр для категории '{self.current_category}' обновлён!")
+            self.load_registry()
+        else:
+            messagebox.showerror("Ошибка", "Не удалось обновить реестр")
+
+    def export_csv(self):
+        """Экспорт текущего реестра в CSV"""
+        # Диалог сохранения файла
+        default_name = f"Реестр_{self.current_category.replace(' ', '_')}_{datetime.now().strftime('%Y-%m-%d')}.csv"
+        filepath = filedialog.asksaveasfilename(
+            title="Сохранить реестр как CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV файлы", "*.csv"), ("Все файлы", "*.*")],
+            initialfile=default_name
+        )
+
+        if not filepath:
+            return
+
+        success = export_registry_to_csv(self.current_category, filepath)
+
+        if success:
+            messagebox.showinfo("Успех", f"Реестр экспортирован в:\n{filepath}")
+            self.status_label.config(text=f"Экспортировано в CSV: {os.path.basename(filepath)}")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось экспортировать реестр")
+
+    def export_excel_single(self):
+        """Экспорт текущего реестра в Excel"""
+        # Диалог сохранения файла
+        default_name = f"Реестр_{self.current_category.replace(' ', '_')}_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        filepath = filedialog.asksaveasfilename(
+            title="Сохранить реестр как Excel",
+            defaultextension=".xlsx",
+            filetypes=[("Excel файлы", "*.xlsx"), ("Все файлы", "*.*")],
+            initialfile=default_name
+        )
+
+        if not filepath:
+            return
+
+        success = export_registry_to_excel(self.current_category, filepath)
+
+        if success:
+            messagebox.showinfo("Успех", f"Реестр экспортирован в:\n{filepath}")
+            self.status_label.config(text=f"Экспортировано в Excel: {os.path.basename(filepath)}")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось экспортировать реестр.\nУбедитесь что установлена библиотека openpyxl:\npip install openpyxl")
+
+    def export_excel_all(self):
+        """Экспорт всех реестров в один Excel файл"""
+        # Диалог сохранения файла
+        default_name = f"Реестры_СМК_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        filepath = filedialog.asksaveasfilename(
+            title="Сохранить все реестры как Excel",
+            defaultextension=".xlsx",
+            filetypes=[("Excel файлы", "*.xlsx"), ("Все файлы", "*.*")],
+            initialfile=default_name
+        )
+
+        if not filepath:
+            return
+
+        success = export_all_registries_to_excel(filepath)
+
+        if success:
+            messagebox.showinfo("Успех", f"Все реестры экспортированы в:\n{filepath}")
+            self.status_label.config(text=f"Экспортированы все реестры в Excel: {os.path.basename(filepath)}")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось экспортировать реестры.\nУбедитесь что установлена библиотека openpyxl:\npip install openpyxl")
