@@ -16,6 +16,10 @@ from registry import (
     read_registry_content, export_registry_to_csv, export_registry_to_excel,
     export_all_registries_to_excel, manual_update_registry
 )
+from employees import (
+    load_employees, add_employee, update_employee, delete_employee,
+    export_employees_to_excel
+)
 
 
 class MainWindow:
@@ -122,6 +126,13 @@ class MainWindow:
         ttk.Button(
             top_frame, text="РЕЕСТРЫ", width=15,
             command=self.open_registry_window,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Кнопка сотрудников
+        ttk.Button(
+            top_frame, text="СОТРУДНИКИ", width=15,
+            command=self.open_employees_window,
             style="TButton"
         ).pack(side=tk.LEFT, padx=5)
 
@@ -331,6 +342,11 @@ class MainWindow:
         """Открыть окно просмотра реестров"""
         registry_window = RegistryWindow(self.root)
         self.root.wait_window(registry_window.window)
+
+    def open_employees_window(self):
+        """Открыть окно управления сотрудниками"""
+        employees_window = EmployeesWindow(self.root)
+        self.root.wait_window(employees_window.window)
 
 
 class PublishDialog:
@@ -847,3 +863,340 @@ class RegistryWindow:
             self.status_label.config(text=f"Экспортированы все реестры в Excel: {os.path.basename(filepath)}")
         else:
             messagebox.showerror("Ошибка", "Не удалось экспортировать реестры.\nУбедитесь что установлена библиотека openpyxl:\npip install openpyxl")
+
+
+class EmployeesWindow:
+    """Окно управления справочником сотрудников"""
+
+    def __init__(self, parent):
+        # Создаём окно
+        self.window = tk.Toplevel(parent)
+        self.window.title("Справочник сотрудников")
+        self.window.geometry("1000x600")
+        self.window.configure(bg="#2C3E50")
+        self.window.transient(parent)
+        self.window.grab_set()
+
+        self.employees = []  # Список сотрудников
+        self.selected_employee = None  # Выбранный сотрудник
+
+        self.create_widgets()
+        self.load_employees_list()
+
+    def create_widgets(self):
+        """Создание элементов интерфейса"""
+
+        # Заголовок
+        header = tk.Label(
+            self.window, text="👥 Справочник сотрудников",
+            font=("Arial", 18, "bold"), bg="#37474F", fg="white", pady=15
+        )
+        header.pack(fill=tk.X)
+
+        # Панель кнопок управления
+        control_frame = tk.Frame(self.window, bg="#455A64", pady=10)
+        control_frame.pack(fill=tk.X, padx=10)
+
+        ttk.Button(
+            control_frame, text="➕ Добавить", width=15,
+            command=self.add_employee_dialog,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            control_frame, text="✏️ Редактировать", width=18,
+            command=self.edit_employee_dialog,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            control_frame, text="🗑️ Удалить", width=15,
+            command=self.delete_employee_action,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Разделитель
+        tk.Frame(control_frame, width=30, bg="#455A64").pack(side=tk.LEFT)
+
+        ttk.Button(
+            control_frame, text="📊 Экспорт в Excel", width=18,
+            command=self.export_to_excel,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Таблица сотрудников
+        table_frame = tk.Frame(self.window, bg="#2C3E50")
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Scrollbar
+        scrollbar = tk.Scrollbar(table_frame, bg="#37474F")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Treeview
+        columns = ("ФИО", "Должность", "Подразделение", "Email")
+        self.tree = ttk.Treeview(
+            table_frame, columns=columns, show="headings",
+            yscrollcommand=scrollbar.set
+        )
+        scrollbar.config(command=self.tree.yview)
+
+        # Настройка колонок
+        self.tree.heading("ФИО", text="ФИО")
+        self.tree.heading("Должность", text="Должность")
+        self.tree.heading("Подразделение", text="Подразделение")
+        self.tree.heading("Email", text="Email")
+
+        self.tree.column("ФИО", width=300)
+        self.tree.column("Должность", width=250)
+        self.tree.column("Подразделение", width=120)
+        self.tree.column("Email", width=250)
+
+        self.tree.pack(fill=tk.BOTH, expand=True)
+
+        # Обработка выбора строки
+        self.tree.bind('<<TreeviewSelect>>', self.on_select)
+
+        # Статус бар
+        self.status_label = tk.Label(
+            self.window, text="Готов", anchor="w",
+            bg="#37474F", fg="white", relief=tk.SUNKEN,
+            font=("Arial", 12), height=2
+        )
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Кнопка закрытия
+        close_frame = tk.Frame(self.window, bg="#2C3E50")
+        close_frame.pack(pady=10)
+
+        ttk.Button(
+            close_frame, text="Закрыть", width=15,
+            command=self.window.destroy,
+            style="TButton"
+        ).pack()
+
+    def load_employees_list(self):
+        """Загрузить и отобразить список сотрудников"""
+        # Очищаем таблицу
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Загружаем сотрудников
+        self.employees = load_employees()
+
+        # Добавляем в таблицу
+        for emp in self.employees:
+            self.tree.insert("", tk.END, values=(
+                emp['fio'],
+                emp['position'],
+                emp['department'],
+                emp['email']
+            ), tags=(emp['id'],))
+
+        self.status_label.config(text=f"Загружено сотрудников: {len(self.employees)}")
+
+    def on_select(self, event):
+        """Обработка выбора строки"""
+        selection = self.tree.selection()
+        if selection:
+            tags = self.tree.item(selection[0])['tags']
+            if tags:
+                emp_id = tags[0]
+                self.selected_employee = next((emp for emp in self.employees if emp['id'] == emp_id), None)
+
+    def add_employee_dialog(self):
+        """Диалог добавления сотрудника"""
+        dialog = EmployeeEditDialog(self.window, None, self)
+        self.window.wait_window(dialog.dialog)
+
+    def edit_employee_dialog(self):
+        """Диалог редактирования сотрудника"""
+        if not self.selected_employee:
+            messagebox.showwarning("Предупреждение", "Выберите сотрудника для редактирования")
+            return
+
+        dialog = EmployeeEditDialog(self.window, self.selected_employee, self)
+        self.window.wait_window(dialog.dialog)
+
+    def delete_employee_action(self):
+        """Удалить выбранного сотрудника"""
+        if not self.selected_employee:
+            messagebox.showwarning("Предупреждение", "Выберите сотрудника для удаления")
+            return
+
+        # Подтверждение
+        if not messagebox.askyesno("Подтверждение",
+                                    f"Удалить сотрудника:\n{self.selected_employee['fio']}?"):
+            return
+
+        success = delete_employee(self.selected_employee['id'])
+
+        if success:
+            messagebox.showinfo("Успех", "Сотрудник удалён")
+            self.load_employees_list()
+            self.selected_employee = None
+        else:
+            messagebox.showerror("Ошибка", "Не удалось удалить сотрудника")
+
+    def export_to_excel(self):
+        """Экспорт списка сотрудников в Excel"""
+        if not self.employees:
+            messagebox.showwarning("Предупреждение", "Список сотрудников пуст")
+            return
+
+        # Диалог сохранения файла
+        default_name = f"Сотрудники_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        filepath = filedialog.asksaveasfilename(
+            title="Сохранить список сотрудников",
+            defaultextension=".xlsx",
+            filetypes=[("Excel файлы", "*.xlsx"), ("Все файлы", "*.*")],
+            initialfile=default_name
+        )
+
+        if not filepath:
+            return
+
+        success = export_employees_to_excel(filepath)
+
+        if success:
+            messagebox.showinfo("Успех", f"Список сотрудников экспортирован в:\n{filepath}")
+            self.status_label.config(text=f"Экспортировано в Excel: {os.path.basename(filepath)}")
+        else:
+            messagebox.showerror("Ошибка",
+                                 "Не удалось экспортировать список.\nУбедитесь что установлена библиотека openpyxl:\npip install openpyxl")
+
+
+class EmployeeEditDialog:
+    """Диалог добавления/редактирования сотрудника"""
+
+    def __init__(self, parent, employee, employees_window):
+        self.employee = employee  # None для добавления, объект для редактирования
+        self.employees_window = employees_window
+
+        # Создаём диалоговое окно
+        self.dialog = tk.Toplevel(parent)
+        title = "Редактирование сотрудника" if employee else "Добавление сотрудника"
+        self.dialog.title(title)
+        self.dialog.geometry("600x400")
+        self.dialog.configure(bg="#2C3E50")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        """Создание элементов диалога"""
+
+        # Заголовок
+        header_text = "✏️ Редактирование" if self.employee else "➕ Добавление"
+        tk.Label(
+            self.dialog, text=header_text,
+            font=("Arial", 16, "bold"), bg="#37474F", fg="white", pady=10
+        ).pack(fill=tk.X)
+
+        # Форма
+        form_frame = tk.LabelFrame(
+            self.dialog, text="Данные сотрудника",
+            padx=20, pady=20, font=("Arial", 14, "bold"),
+            bg="#37474F", fg="white"
+        )
+        form_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # ФИО
+        row1 = tk.Frame(form_frame, bg="#37474F")
+        row1.pack(fill=tk.X, pady=5)
+        tk.Label(row1, text="ФИО:", width=15, anchor="w",
+                 font=("Arial", 12), bg="#37474F", fg="white").pack(side=tk.LEFT)
+        self.fio_var = tk.StringVar(value=self.employee['fio'] if self.employee else "")
+        tk.Entry(row1, textvariable=self.fio_var, width=40,
+                 font=("Arial", 12), bg="#4A5568", fg="white",
+                 insertbackground="white").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Должность
+        row2 = tk.Frame(form_frame, bg="#37474F")
+        row2.pack(fill=tk.X, pady=5)
+        tk.Label(row2, text="Должность:", width=15, anchor="w",
+                 font=("Arial", 12), bg="#37474F", fg="white").pack(side=tk.LEFT)
+        self.position_var = tk.StringVar(value=self.employee['position'] if self.employee else "")
+        tk.Entry(row2, textvariable=self.position_var, width=40,
+                 font=("Arial", 12), bg="#4A5568", fg="white",
+                 insertbackground="white").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Подразделение
+        row3 = tk.Frame(form_frame, bg="#37474F")
+        row3.pack(fill=tk.X, pady=5)
+        tk.Label(row3, text="Подразделение:", width=15, anchor="w",
+                 font=("Arial", 12), bg="#37474F", fg="white").pack(side=tk.LEFT)
+        self.department_var = tk.StringVar(value=self.employee['department'] if self.employee else "ФБП")
+        department_combo = ttk.Combobox(
+            row3,
+            textvariable=self.department_var,
+            values=["ФБП", "НПФ"],
+            state="readonly",
+            font=("Arial", 12),
+            width=20
+        )
+        department_combo.pack(side=tk.LEFT)
+
+        # Email
+        row4 = tk.Frame(form_frame, bg="#37474F")
+        row4.pack(fill=tk.X, pady=5)
+        tk.Label(row4, text="Email:", width=15, anchor="w",
+                 font=("Arial", 12), bg="#37474F", fg="white").pack(side=tk.LEFT)
+        self.email_var = tk.StringVar(value=self.employee['email'] if self.employee else "")
+        tk.Entry(row4, textvariable=self.email_var, width=40,
+                 font=("Arial", 12), bg="#4A5568", fg="white",
+                 insertbackground="white").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Кнопки
+        button_frame = tk.Frame(self.dialog, bg="#2C3E50")
+        button_frame.pack(pady=10)
+
+        ttk.Button(
+            button_frame, text="Отмена", width=15,
+            command=self.dialog.destroy,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        save_text = "Сохранить" if self.employee else "Добавить"
+        ttk.Button(
+            button_frame, text=save_text, width=15,
+            command=self.save,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+    def save(self):
+        """Сохранить сотрудника"""
+        fio = self.fio_var.get().strip()
+        position = self.position_var.get().strip()
+        department = self.department_var.get()
+        email = self.email_var.get().strip()
+
+        # Валидация
+        if not fio:
+            messagebox.showerror("Ошибка", "Введите ФИО")
+            return
+
+        if not position:
+            messagebox.showerror("Ошибка", "Введите должность")
+            return
+
+        if not email:
+            messagebox.showerror("Ошибка", "Введите email")
+            return
+
+        # Сохраняем
+        if self.employee:
+            # Редактирование
+            success = update_employee(self.employee['id'], fio, position, department, email)
+            msg = "Данные сотрудника обновлены"
+        else:
+            # Добавление
+            success = add_employee(fio, position, department, email)
+            msg = "Сотрудник добавлен"
+
+        if success:
+            messagebox.showinfo("Успех", msg)
+            self.employees_window.load_employees_list()
+            self.dialog.destroy()
+        else:
+            messagebox.showerror("Ошибка", "Не удалось сохранить данные")
