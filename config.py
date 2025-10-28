@@ -4,9 +4,22 @@
 """
 
 import os
+import sys
 
 # Базовая директория проекта
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Определяем где мы запущены: из .app или как Python скрипт
+if getattr(sys, 'frozen', False):
+    # Запущено из скомпилированного .app
+    # sys.executable = /path/to/iso2/ISO2.app/Contents/MacOS/ISO2
+    # Нужно подняться на 3 уровня вверх к корню iso2/
+    app_path = sys.executable  # .../ISO2.app/Contents/MacOS/ISO2
+    contents_dir = os.path.dirname(app_path)  # .../ISO2.app/Contents/MacOS
+    app_bundle = os.path.dirname(contents_dir)  # .../ISO2.app/Contents
+    app_dir = os.path.dirname(app_bundle)  # .../ISO2.app
+    BASE_DIR = os.path.dirname(app_dir)  # .../iso2/ (папка где лежит ISO2.app)
+else:
+    # Запущено как Python скрипт (для разработки)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Пути к папкам документов
 DOCS_DIR = os.path.join(BASE_DIR, "docs")

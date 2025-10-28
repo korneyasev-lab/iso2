@@ -6,6 +6,9 @@ GUI для ISO2
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
+import sys
+import subprocess
+import platform
 from datetime import datetime
 from config import PROJECTS_DIR, ACTIVE_DIR, ARCHIVE_DIR, CATEGORIES, ACTIVE_CATEGORIES, ARCHIVE_CATEGORIES
 from logic import (
@@ -333,7 +336,16 @@ class MainWindow:
         # Находим документ
         doc = next((d for d in self.documents if d.filename == filename and d.category == category), None)
         if doc:
-            os.startfile(doc.full_path)
+            # Открываем файл кроссплатформенно
+            try:
+                if platform.system() == 'Darwin':  # macOS
+                    subprocess.call(['open', doc.full_path])
+                elif platform.system() == 'Windows':
+                    os.startfile(doc.full_path)
+                else:  # Linux
+                    subprocess.call(['xdg-open', doc.full_path])
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось открыть файл:\n{e}")
 
     def on_document_select(self, event=None):
         """Обработка выбора документа в таблице"""
