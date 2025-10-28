@@ -158,6 +158,16 @@ class MainWindow:
         )
         self.familiarization_btn.pack(side=tk.LEFT, padx=5)
 
+        # Разделитель
+        tk.Frame(top_frame, width=30, bg="#37474F").pack(side=tk.LEFT)
+
+        # Кнопка смены рабочей папки
+        ttk.Button(
+            top_frame, text="⚙️ Сменить папку", width=18,
+            command=self.change_work_folder,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
         # Метка текущей папки и фильтр категорий
         folder_filter_frame = tk.Frame(self.root, bg="#455A64", height=60)
         folder_filter_frame.pack(fill=tk.X, padx=10)
@@ -408,6 +418,54 @@ class MainWindow:
         """Открыть окно управления сотрудниками"""
         employees_window = EmployeesWindow(self.root)
         self.root.wait_window(employees_window.window)
+
+    def change_work_folder(self):
+        """Сменить рабочую папку"""
+        import config
+
+        # Показываем текущую папку
+        current = config.DOCS_DIR if config.DOCS_DIR else "не установлена"
+
+        result = messagebox.askyesno(
+            "Смена рабочей папки",
+            f"Текущая рабочая папка:\n{current}\n\n"
+            f"Вы хотите выбрать другую папку для хранения документов?"
+        )
+
+        if not result:
+            return
+
+        # Диалог выбора новой папки
+        new_dir = filedialog.askdirectory(
+            title="Выберите новую папку для хранения документов",
+            mustexist=True
+        )
+
+        if not new_dir:
+            return
+
+        # Устанавливаем новую папку
+        if config.set_work_dir(new_dir):
+            messagebox.showinfo(
+                "Успех",
+                f"Рабочая папка изменена на:\n{new_dir}\n\n"
+                f"Приложение будет перезапущено."
+            )
+
+            # Перезапускаем окно
+            self.root.destroy()
+
+            # Создаём новое окно
+            import tkinter as tk
+            new_root = tk.Tk()
+            from gui_main import MainWindow
+            MainWindow(new_root)
+            new_root.mainloop()
+        else:
+            messagebox.showerror(
+                "Ошибка",
+                "Не удалось изменить рабочую папку"
+            )
 
 
 class PublishDialog:

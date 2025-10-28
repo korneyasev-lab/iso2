@@ -25,7 +25,10 @@ OPTIONS = {
         'CFBundleVersion': '1.0.0',
         'CFBundleShortVersionString': '1.0.0',
         'NSHumanReadableCopyright': '© 2025 ISO2'
-    }
+    },
+    # Отключаем автоматическую подпись кода (решает проблему RuntimeError)
+    'no_chdir': True,
+    'strip': False
 }
 
 setup(
