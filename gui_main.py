@@ -18,7 +18,7 @@ from registry import (
 )
 from employees import (
     load_employees, add_employee, update_employee, delete_employee,
-    export_employees_to_excel
+    export_employees_to_excel, create_familiarization_sheet
 )
 
 
@@ -147,6 +147,14 @@ class MainWindow:
         )
         self.publish_btn.pack(side=tk.LEFT, padx=5)
 
+        # Кнопка листа ознакомления
+        self.familiarization_btn = ttk.Button(
+            top_frame, text="📄 Лист ознакомления", width=22,
+            command=self.open_familiarization_dialog,
+            style="Publish.TButton"
+        )
+        self.familiarization_btn.pack(side=tk.LEFT, padx=5)
+
         # Метка текущей папки и фильтр категорий
         folder_filter_frame = tk.Frame(self.root, bg="#455A64", height=60)
         folder_filter_frame.pack(fill=tk.X, padx=10)
@@ -203,6 +211,9 @@ class MainWindow:
         # Двойной клик - открыть файл
         self.tree.bind('<Double-1>', self.open_document)
 
+        # Клик - выбор документа (для активации кнопок)
+        self.tree.bind('<<TreeviewSelect>>', self.on_document_select)
+
         # Статус бар
         self.status_label = tk.Label(
             self.root, text="Готов", anchor="w",
@@ -232,6 +243,12 @@ class MainWindow:
             self.publish_btn.config(state=tk.NORMAL)
         else:
             self.publish_btn.config(state=tk.DISABLED)
+
+        # Активируем кнопку листа ознакомления только для ДЕЙСТВУЮЩИХ
+        if folder_path == ACTIVE_DIR:
+            self.familiarization_btn.config(state=tk.DISABLED)  # Будет активна при выборе документа
+        else:
+            self.familiarization_btn.config(state=tk.DISABLED)
 
     def on_category_change(self, event=None):
         """Обработка изменения фильтра категорий"""
@@ -318,6 +335,17 @@ class MainWindow:
         if doc:
             os.startfile(doc.full_path)
 
+    def on_document_select(self, event=None):
+        """Обработка выбора документа в таблице"""
+        selection = self.tree.selection()
+
+        # Активируем кнопку листа ознакомления только если выбран документ и открыта папка ДЕЙСТВУЮЩИЕ
+        if selection and self.current_folder == ACTIVE_DIR:
+            self.familiarization_btn.config(state=tk.NORMAL)
+        else:
+            if self.current_folder == ACTIVE_DIR:
+                self.familiarization_btn.config(state=tk.DISABLED)
+
     def open_publish_dialog(self):
         """Открыть диалог публикации"""
         selection = self.tree.selection()
@@ -336,6 +364,27 @@ class MainWindow:
         doc = next((d for d in self.documents if d.filename == filename), None)
         if doc:
             dialog = PublishDialog(self.root, doc, self)
+            self.root.wait_window(dialog.dialog)
+
+    def open_familiarization_dialog(self):
+        """Открыть диалог создания листа ознакомления"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите документ из ДЕЙСТВУЮЩИХ")
+            return
+
+        # Получаем filename и category из tags
+        tags = self.tree.item(selection[0])['tags']
+        if not tags:
+            return
+
+        filename = tags[0]
+        category = tags[1] if len(tags) > 1 and tags[1] else None
+
+        # Находим документ
+        doc = next((d for d in self.documents if d.filename == filename and d.category == category), None)
+        if doc:
+            dialog = FamiliarizationDialog(self.root, doc)
             self.root.wait_window(dialog.dialog)
 
     def open_registry_window(self):
@@ -1200,3 +1249,220 @@ class EmployeeEditDialog:
             self.dialog.destroy()
         else:
             messagebox.showerror("Ошибка", "Не удалось сохранить данные")
+
+
+class FamiliarizationDialog:
+    """Диалог создания листа ознакомления для документа"""
+
+    def __init__(self, parent, document):
+        self.document = document
+
+        # Создаём диалоговое окно
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Лист ознакомления")
+        self.dialog.geometry("700x600")
+        self.dialog.configure(bg="#2C3E50")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Загружаем сотрудников
+        self.employees = load_employees()
+        self.employee_vars = {}  # {employee_id: BooleanVar}
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        """Создание элементов диалога"""
+
+        # Заголовок
+        tk.Label(
+            self.dialog, text="📄 Создание листа ознакомления",
+            font=("Arial", 16, "bold"), bg="#37474F", fg="white", pady=10
+        ).pack(fill=tk.X)
+
+        # Информация о документе
+        from logic import build_filename
+        if self.document.is_valid:
+            doc_name = build_filename(self.document.typ, self.document.kod,
+                                     self.document.version, self.document.year, self.document.title)
+        else:
+            doc_name = self.document.filename
+
+        doc_frame = tk.LabelFrame(
+            self.dialog, text="Документ",
+            padx=10, pady=10, font=("Arial", 12, "bold"),
+            bg="#37474F", fg="white"
+        )
+        doc_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        tk.Label(
+            doc_frame, text=doc_name,
+            font=("Arial", 12), bg="#37474F", fg="white", wraplength=650
+        ).pack(anchor="w")
+
+        if hasattr(self.document, 'category') and self.document.category:
+            tk.Label(
+                doc_frame, text=f"Категория: {self.document.category}",
+                font=("Arial", 10), bg="#37474F", fg="#B0BEC5"
+            ).pack(anchor="w")
+
+        # Кнопки быстрого выбора
+        quick_frame = tk.Frame(self.dialog, bg="#455A64", pady=10)
+        quick_frame.pack(fill=tk.X, padx=10)
+
+        tk.Label(
+            quick_frame, text="Быстрый выбор:",
+            font=("Arial", 12, "bold"), bg="#455A64", fg="white"
+        ).pack(side=tk.LEFT, padx=10)
+
+        ttk.Button(
+            quick_frame, text="Все ФБП", width=12,
+            command=lambda: self.select_by_department("ФБП"),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            quick_frame, text="Все НПФ", width=12,
+            command=lambda: self.select_by_department("НПФ"),
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            quick_frame, text="Снять все", width=12,
+            command=self.deselect_all,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            quick_frame, text="Выбрать все", width=12,
+            command=self.select_all,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Список сотрудников с галочками
+        emp_frame = tk.LabelFrame(
+            self.dialog, text="Выберите сотрудников для ознакомления",
+            padx=10, pady=10, font=("Arial", 12, "bold"),
+            bg="#37474F", fg="white"
+        )
+        emp_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Scrollable canvas
+        canvas = tk.Canvas(emp_frame, bg="#37474F", highlightthickness=0)
+        scrollbar = tk.Scrollbar(emp_frame, orient="vertical", command=canvas.yview, bg="#4A5568")
+        self.scrollable_frame = tk.Frame(canvas, bg="#37474F")
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Создаём галочки для каждого сотрудника
+        if not self.employees:
+            tk.Label(
+                self.scrollable_frame, text="Нет сотрудников в справочнике",
+                fg="#B0BEC5", font=("Arial", 12, "italic"), bg="#37474F"
+            ).pack(pady=20)
+        else:
+            for emp in self.employees:
+                emp_row = tk.Frame(self.scrollable_frame, bg="#4A5568", pady=5, padx=10)
+                emp_row.pack(fill=tk.X, pady=2)
+
+                var = tk.BooleanVar(value=False)
+                self.employee_vars[emp['id']] = var
+
+                chk = tk.Checkbutton(
+                    emp_row, variable=var,
+                    font=("Arial", 11), bg="#4A5568", fg="white",
+                    selectcolor="#37474F", activebackground="#4A5568",
+                    text=""
+                )
+                chk.pack(side=tk.LEFT, padx=5)
+
+                # Информация о сотруднике
+                info_text = f"{emp['fio']} — {emp['position']} ({emp['department']})"
+                tk.Label(
+                    emp_row, text=info_text,
+                    font=("Arial", 11), bg="#4A5568", fg="white", anchor="w"
+                ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Кнопки
+        button_frame = tk.Frame(self.dialog, bg="#2C3E50")
+        button_frame.pack(pady=10)
+
+        ttk.Button(
+            button_frame, text="Отмена", width=15,
+            command=self.dialog.destroy,
+            style="TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            button_frame, text="Создать лист", width=15,
+            command=self.create_sheet,
+            style="Publish.TButton"
+        ).pack(side=tk.LEFT, padx=5)
+
+    def select_by_department(self, department):
+        """Выбрать всех сотрудников из подразделения"""
+        for emp in self.employees:
+            if emp['department'] == department:
+                self.employee_vars[emp['id']].set(True)
+
+    def deselect_all(self):
+        """Снять все галочки"""
+        for var in self.employee_vars.values():
+            var.set(False)
+
+    def select_all(self):
+        """Выбрать всех сотрудников"""
+        for var in self.employee_vars.values():
+            var.set(True)
+
+    def create_sheet(self):
+        """Создать лист ознакомления"""
+        # Получаем выбранных сотрудников
+        selected = [emp for emp in self.employees if self.employee_vars[emp['id']].get()]
+
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите хотя бы одного сотрудника")
+            return
+
+        # Диалог сохранения файла
+        from logic import build_filename
+        if self.document.is_valid:
+            doc_short = f"{self.document.typ}.{self.document.kod}"
+        else:
+            doc_short = "Документ"
+
+        default_name = f"Лист_ознакомления_{doc_short}_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        filepath = filedialog.asksaveasfilename(
+            title="Сохранить лист ознакомления",
+            defaultextension=".xlsx",
+            filetypes=[("Excel файлы", "*.xlsx"), ("Все файлы", "*.*")],
+            initialfile=default_name
+        )
+
+        if not filepath:
+            return
+
+        # Создаём лист
+        success = create_familiarization_sheet(self.document, selected, filepath)
+
+        if success:
+            messagebox.showinfo("Успех",
+                f"Лист ознакомления создан!\n\n"
+                f"Документ: {self.document.filename}\n"
+                f"Сотрудников: {len(selected)}\n"
+                f"Файл: {filepath}")
+            self.dialog.destroy()
+        else:
+            messagebox.showerror("Ошибка",
+                "Не удалось создать лист ознакомления.\n"
+                "Убедитесь что установлена библиотека openpyxl:\n"
+                "pip install openpyxl")

@@ -240,3 +240,131 @@ def export_employees_to_excel(output_path):
     except Exception as e:
         print(f"Ошибка экспорта: {e}")
         return False
+
+
+def create_familiarization_sheet(document, selected_employees, output_path):
+    """
+    Создать лист ознакомления с документом для выбранных сотрудников
+
+    Args:
+        document: Объект документа (Document)
+        selected_employees: Список выбранных сотрудников (list[dict])
+        output_path: Путь для сохранения Excel файла
+
+    Returns:
+        bool: True если успешно
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from datetime import datetime
+        from logic import build_filename
+
+        if not selected_employees:
+            return False
+
+        # Создаём книгу
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Лист ознакомления"
+
+        # Стили
+        header_font = Font(name='Arial', size=12, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4A5568", end_color="4A5568", fill_type="solid")
+        header_alignment = Alignment(horizontal='center', vertical='center')
+
+        title_font = Font(name='Arial', size=16, bold=True)
+        title_alignment = Alignment(horizontal='center', vertical='center')
+
+        subtitle_font = Font(name='Arial', size=12, bold=True)
+        normal_font = Font(name='Arial', size=11)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # Заголовок
+        ws.merge_cells('A1:F1')
+        ws['A1'] = 'ЛИСТ ОЗНАКОМЛЕНИЯ С ДОКУМЕНТОМ СМК'
+        ws['A1'].font = title_font
+        ws['A1'].alignment = title_alignment
+
+        # Информация о документе
+        if document.is_valid:
+            doc_name = build_filename(document.typ, document.kod, document.version, document.year, document.title)
+        else:
+            doc_name = document.filename
+
+        ws.merge_cells('A3:F3')
+        ws['A3'] = f'Документ: {doc_name}'
+        ws['A3'].font = subtitle_font
+        ws['A3'].alignment = Alignment(horizontal='left')
+
+        if hasattr(document, 'category') and document.category:
+            ws.merge_cells('A4:F4')
+            ws['A4'] = f'Категория: {document.category}'
+            ws['A4'].font = Font(name='Arial', size=11)
+            ws['A4'].alignment = Alignment(horizontal='left')
+
+        ws.merge_cells('A5:F5')
+        ws['A5'] = f'Дата формирования листа: {datetime.now().strftime("%d.%m.%Y")}'
+        ws['A5'].font = Font(name='Arial', size=11)
+        ws['A5'].alignment = Alignment(horizontal='left')
+
+        # Заголовки таблицы
+        headers = ['№', 'ФИО', 'Должность', 'Подразделение', 'Дата ознакомления', 'Подпись']
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row=7, column=col)
+            cell.value = header
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = border
+
+        # Ширина колонок
+        ws.column_dimensions['A'].width = 5
+        ws.column_dimensions['B'].width = 35
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 20
+        ws.column_dimensions['F'].width = 20
+
+        # Данные сотрудников
+        for idx, emp in enumerate(selected_employees, start=1):
+            row = idx + 7
+
+            ws.cell(row=row, column=1).value = idx
+            ws.cell(row=row, column=2).value = emp['fio']
+            ws.cell(row=row, column=3).value = emp['position']
+            ws.cell(row=row, column=4).value = emp['department']
+            ws.cell(row=row, column=5).value = ""  # Пустая ячейка для даты
+            ws.cell(row=row, column=6).value = ""  # Пустая ячейка для подписи
+
+            for col in range(1, 7):
+                cell = ws.cell(row=row, column=col)
+                cell.font = normal_font
+                cell.border = border
+                if col == 1 or col == 4:
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                else:
+                    cell.alignment = Alignment(horizontal='left', vertical='center')
+
+        # Итого
+        row = len(selected_employees) + 9
+        ws.merge_cells(f'A{row}:F{row}')
+        ws[f'A{row}'] = f'Всего для ознакомления: {len(selected_employees)} человек(а)'
+        ws[f'A{row}'].font = Font(name='Arial', size=11, bold=True)
+        ws[f'A{row}'].alignment = Alignment(horizontal='center')
+
+        # Сохраняем
+        wb.save(output_path)
+        return True
+
+    except ImportError:
+        print("Ошибка: библиотека openpyxl не установлена")
+        return False
+    except Exception as e:
+        print(f"Ошибка создания листа ознакомления: {e}")
+        return False
