@@ -1,0 +1,17 @@
+{
+    "month_cell": "B2",
+    "year_cell": "D2",
+    "version_cell": "F2",
+    "items_start_row": 5,
+    "columns": {
+        "number": "A",
+        "client": "B",
+        "drawing": "C",
+        "variant": "D",
+        "quantity_was": "E",
+        "quantity_now": "F",
+        "deadline_was": "G",
+        "deadline_now": "H",
+        "notes": "I"
+    }
+}

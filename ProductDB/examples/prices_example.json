@@ -1,0 +1,37 @@
+[
+    {
+        "component_id": 1,
+        "price": 15.50,
+        "currency": "RUB",
+        "valid_from": "2025-01-01",
+        "notes": "Цена на бетон M20 с начала 2025 года"
+    },
+    {
+        "component_id": 2,
+        "price": 18.00,
+        "currency": "RUB",
+        "valid_from": "2025-01-01",
+        "notes": "Цена на бетон M25 с начала 2025 года"
+    },
+    {
+        "component_id": 3,
+        "price": 250.00,
+        "currency": "RUB",
+        "valid_from": "2025-01-01",
+        "notes": "Цена на закладную деталь ZD-100"
+    },
+    {
+        "component_id": 4,
+        "price": 5.00,
+        "currency": "RUB",
+        "valid_from": "2025-01-01",
+        "notes": "Цена на болт М12"
+    },
+    {
+        "component_id": 5,
+        "price": 120.00,
+        "currency": "RUB",
+        "valid_from": "2025-01-01",
+        "notes": "Цена на картон асбестовый за м2"
+    }
+]
